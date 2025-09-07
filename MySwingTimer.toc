@@ -1,0 +1,8 @@
+## Interface: 11307
+## Title: My Swing Timer
+## Notes: Tracks weapon swing timers for WoW Classic
+## Author: Netha
+## SavedVariables: MySwingTimerDB
+MySwingTimer.lua
+MySwingTimerHunter.lua
+MySwingTimerOptions.lua
