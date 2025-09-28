@@ -7,7 +7,6 @@ SlashCmdList["MYSWINGTIMER"] = function(msg)
     msg = string.lower(msg or "")
     if msg == "show" then
         MySwingTimerDB.showOutsideCombat = not MySwingTimerDB.showOutsideCombat
-        print("[MySwingTimer] Toggling showOutsideCombat, new state: " .. tostring(MySwingTimerDB.showOutsideCombat) .. ", inCombat: " .. tostring(inCombat))
         -- Update bar visibility if out of combat
         if barMH and not inCombat then
             if MySwingTimerDB.showOutsideCombat then
@@ -32,7 +31,7 @@ SlashCmdList["MYSWINGTIMER"] = function(msg)
                 if dragHandle then dragHandle:Hide() end
             end
         end
-        print("[MySwingTimer] Show outside combat set to: " .. tostring(MySwingTimerDB.showOutsideCombat) .. ", barMH visible = " .. tostring(barMH and barMH:IsVisible()) .. ", barOH visible = " .. tostring(barOH and barOH:IsVisible()))
+        DEFAULT_CHAT_FRAME:AddMessage(MySwingTimerDB.showOutsideCombat and "Swing bar always shown" or "Swing bar hidden outside combat")
     elseif msg == "reset" then
         -- Reset saved variables and bar positions
         MySwingTimerDB = {}

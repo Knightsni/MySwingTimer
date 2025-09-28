@@ -4,5 +4,4 @@
 ## Author: Netha
 ## SavedVariables: MySwingTimerDB
 MySwingTimer.lua
-MySwingTimerHunter.lua
 MySwingTimerOptions.lua

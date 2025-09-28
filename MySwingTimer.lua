@@ -1,5 +1,5 @@
 -- MySwingTimer.lua
--- Basic weapon swing timer for WoW Classic melee (main hand and offhand), with dual wield, haste buff support, and bar locking
+-- Basic weapon swing timer for WoW Classic melee and ranged (hunter auto-shot and wands), with dual wield, haste buff support, and bar locking
 
 -- Initialize saved variables early
 MySwingTimerDB = MySwingTimerDB or {}
@@ -17,21 +17,11 @@ local swingStartOH = 0  -- Timestamp when the last offhand swing started
 local swingDurationOH = 0  -- Offhand weapon speed
 local isSwingingOH = false  -- Flag for active offhand swing
 local dualWield = false  -- Flag for dual wield detection
+local isRanged = false  -- Flag for ranged vs melee
 inCombat = false  -- Track if player is in combat (global for options access)
 local hasHasteBuff = false  -- Track any haste buff status
 local isDragging = false  -- Track if either bar is being dragged
 local draggedBar = nil  -- Track which bar is being dragged
-local lastDebugTime = 0  -- Timestamp for throttling debug messages
-local debugThrottleInterval = 600  -- 10 minutes in seconds
-
--- Throttle debug messages to one every 10 minutes
-local function ThrottleDebugPrint(message)
-    local currentTime = GetTime()
-    if currentTime - lastDebugTime >= debugThrottleInterval then
-        print("[MySwingTimer Debug] " .. message)
-        lastDebugTime = currentTime
-    end
-end
 
 -- Table of haste buff spell IDs
 local hasteBuffs = {
@@ -96,55 +86,35 @@ dragHandle:SetMovable(true)
 dragHandle:EnableMouse(true)
 dragHandle:RegisterForDrag("LeftButton")
 dragHandle:SetScript("OnDragStart", function(self)
-    if MySwingTimerDB.lockBars and barMH then
+    if MySwingTimerDB.lockBars and barMH and barOH then
         draggedBar = barMH  -- Set draggedBar for reference
-        print("[MySwingTimer Debug] Drag handle started, lockBars = " .. tostring(MySwingTimerDB.lockBars) .. ", draggedBar = barMH")
         barMH:StartMoving()
         isDragging = true
-    else
-        print("[MySwingTimer Debug] Drag handle error: lockBars = " .. tostring(MySwingTimerDB.lockBars) .. ", barMH = " .. tostring(barMH))
     end
 end)
 dragHandle:SetScript("OnDragStop", function(self)
-    if MySwingTimerDB.lockBars and barMH then
+    if MySwingTimerDB.lockBars and barMH and barOH then
         barMH:StopMovingOrSizing()
-        if barOH then
-            barOH:ClearAllPoints()
-            barOH:SetPoint("TOPLEFT", barMH, "BOTTOMLEFT", 0, -2)
-        end
-        if barBow then
-            barBow:ClearAllPoints()
-            barBow:SetPoint("TOPLEFT", barOH or barMH, "BOTTOMLEFT", 0, -2)
-        end
+        barOH:ClearAllPoints()
+        barOH:SetPoint("TOPLEFT", barMH, "BOTTOMLEFT", 0, -2)  -- Anchor OH to MH
         MySwingTimerDB.pointMH = "BOTTOMLEFT"
         MySwingTimerDB.relativePointMH = "BOTTOMLEFT"
         MySwingTimerDB.xMH = barMH:GetLeft() or 0
         MySwingTimerDB.yMH = barMH:GetBottom() or 0
-        if barOH then
-            MySwingTimerDB.pointOH = "BOTTOMLEFT"
-            MySwingTimerDB.relativePointOH = "BOTTOMLEFT"
-            MySwingTimerDB.xOH = barOH:GetLeft() or 0
-            MySwingTimerDB.yOH = barOH:GetBottom() or 0
-        end
-        if barBow then
-            MySwingTimerDB.pointBow = "BOTTOMLEFT"
-            MySwingTimerDB.relativePointBow = "BOTTOMLEFT"
-            MySwingTimerDB.xBow = barBow:GetLeft() or 0
-            MySwingTimerDB.yBow = barBow:GetBottom() or 0
-        end
+        MySwingTimerDB.pointOH = "BOTTOMLEFT"
+        MySwingTimerDB.relativePointOH = "BOTTOMLEFT"
+        MySwingTimerDB.xOH = barOH:GetLeft() or 0
+        MySwingTimerDB.yOH = barOH:GetBottom() or 0
         dragHandle:ClearAllPoints()
         dragHandle:SetPoint("CENTER", barMH, "RIGHT", 10, 0)  -- Anchor to barMH's right side
         dragHandle:Show()
         barMH:Show()
-        if barOH then barOH:Show() end
-        if barBow then barBow:Show() end
-        print("[MySwingTimer Debug] Drag handle stopped, lockBars = " .. tostring(MySwingTimerDB.lockBars) .. ", barMH pos = x: " .. tostring(MySwingTimerDB.xMH) .. ", y: " .. tostring(MySwingTimerDB.yMH) .. ", barOH pos = x: " .. tostring(MySwingTimerDB.xOH or "N/A") .. ", y: " .. tostring(MySwingTimerDB.yOH or "N/A") .. ", barBow pos = x: " .. tostring(MySwingTimerDB.xBow or "N/A") .. ", y: " .. tostring(MySwingTimerDB.yBow or "N/A"))
+        barOH:Show()  -- Ensure both bars remain visible
     end
     isDragging = false
     draggedBar = nil
     barMH.border:Hide()
-    if barOH then barOH.border:Hide() end
-    if barBow then barBow.border:Hide() end
+    barOH.border:Hide()
 end)
 dragHandle:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -160,7 +130,7 @@ dragHandle:SetScript("OnShow", function(self)
 end)
 
 -- UI: Create movable progress bars
-barMH = CreateFrame("StatusBar", nil, UIParent)  -- Main hand bar (global for options access)
+barMH = CreateFrame("StatusBar", nil, UIParent)  -- Main hand or ranged bar (global for options access)
 barMH:SetSize(200, 20)  -- Width, Height
 barMH:SetPoint("CENTER", 0, 0)  -- Middle of screen
 barMH:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")  -- Simple texture
@@ -206,7 +176,6 @@ barMH:SetScript("OnDragStop", function(self)
     self:StopMovingOrSizing()
     local mhTop, mhBottom = self:GetTop() or 0, self:GetBottom() or 0
     local ohTop, ohBottom = barOH and barOH:GetTop() or 0, barOH and barOH:GetBottom() or 0
-    local bowTop, bowBottom = barBow and barBow:GetTop() or 0, barBow and barBow:GetBottom() or 0
     MySwingTimerDB.pointMH = "BOTTOMLEFT"
     MySwingTimerDB.relativePointMH = "BOTTOMLEFT"
     MySwingTimerDB.xMH = self:GetLeft() or 0
@@ -214,92 +183,65 @@ barMH:SetScript("OnDragStop", function(self)
     isDragging = false
     draggedBar = nil
     barMH.border:Hide()
-    if barOH then barOH.border:Hide() end
-    if barBow then barBow.border:Hide() end
+    barOH.border:Hide()
     if MySwingTimerDB.lockBars and dragHandle then
         dragHandle:Show()
     else
         if dragHandle then dragHandle:Hide() end
     end
-    if dualWield or (barBow and barBow:IsVisible()) then
+    if dualWield then
         local snapThreshold = 8  -- Snap threshold for locking
         local unlockThreshold = 12  -- Reduced threshold for unlocking
-        local distances = {}
-        if barOH then
-            table.insert(distances, math.abs(mhBottom - ohTop))
-            table.insert(distances, math.abs(mhTop - ohBottom))
-            table.insert(distances, math.abs(ohBottom - mhTop))
-            table.insert(distances, math.abs(ohTop - mhBottom))
-        end
-        if barBow then
-            table.insert(distances, math.abs(mhBottom - bowTop))
-            table.insert(distances, math.abs(mhTop - bowBottom))
-            table.insert(distances, math.abs(bowBottom - mhTop))
-            table.insert(distances, math.abs(bowTop - mhBottom))
-            if barOH then
-                table.insert(distances, math.abs(ohBottom - bowTop))
-                table.insert(distances, math.abs(ohTop - bowBottom))
-                table.insert(distances, math.abs(bowBottom - ohTop))
-                table.insert(distances, math.abs(bowTop - ohBottom))
-            end
-        end
-        local shouldLock = false
-        for _, distance in ipairs(distances) do
-            if distance <= snapThreshold then
-                shouldLock = true
-                break
-            end
-        end
-        local shouldUnlock = true
-        for _, distance in ipairs(distances) do
-            if distance <= unlockThreshold then
-                shouldUnlock = false
-                break
-            end
-        end
-        if shouldLock then
-            -- Snap bars together
-            local left = self:GetLeft() or 0
-            local prevBottom = self:GetBottom() or 0
+        local distanceMHBelowOH = math.abs(mhBottom - ohTop)
+        local distanceMHAboveOH = math.abs(mhTop - ohBottom)
+        local distanceOHBelowMH = math.abs(ohBottom - mhTop)
+        local distanceOHAboveMH = math.abs(ohTop - mhBottom)
+        if distanceMHBelowOH <= snapThreshold or distanceOHAboveMH <= snapThreshold then
+            -- Snap MH below OH or OH above MH
+            local left = self:GetLeft()
+            local ohBottomY = barOH:GetBottom()
             self:ClearAllPoints()
-            self:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", left, prevBottom)
-            if barOH then
-                barOH:ClearAllPoints()
-                barOH:SetPoint("TOPLEFT", barMH, "BOTTOMLEFT", 0, -2)
-            end
-            if barBow then
-                barBow:ClearAllPoints()
-                barBow:SetPoint("TOPLEFT", barOH or barMH, "BOTTOMLEFT", 0, -2)
-            end
+            self:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", left, ohBottomY - 2)
+            barOH:ClearAllPoints()
+            barOH:SetPoint("TOPLEFT", barMH, "BOTTOMLEFT", 0, -2)  -- Anchor OH to MH
             MySwingTimerDB.lockBars = true
-            if dragHandle then
-                dragHandle:ClearAllPoints()
-                dragHandle:SetPoint("CENTER", barMH, "RIGHT", 10, 0)
-                dragHandle:Show()
-            end
+            dragHandle:ClearAllPoints()
+            dragHandle:SetPoint("CENTER", barMH, "RIGHT", 10, 0)  -- Anchor to barMH's right side
+            dragHandle:Show()
             MySwingTimerDB.pointMH = "BOTTOMLEFT"
             MySwingTimerDB.relativePointMH = "BOTTOMLEFT"
             MySwingTimerDB.xMH = self:GetLeft() or 0
             MySwingTimerDB.yMH = self:GetBottom() or 0
-            if barOH then
-                MySwingTimerDB.pointOH = "BOTTOMLEFT"
-                MySwingTimerDB.relativePointOH = "BOTTOMLEFT"
-                MySwingTimerDB.xOH = barOH:GetLeft() or 0
-                MySwingTimerDB.yOH = barOH:GetBottom() or 0
-            end
-            if barBow then
-                MySwingTimerDB.pointBow = "BOTTOMLEFT"
-                MySwingTimerDB.relativePointBow = "BOTTOMLEFT"
-                MySwingTimerDB.xBow = barBow:GetLeft() or 0
-                MySwingTimerDB.yBow = barBow:GetBottom() or 0
-            end
+            MySwingTimerDB.pointOH = "BOTTOMLEFT"
+            MySwingTimerDB.relativePointOH = "BOTTOMLEFT"
+            MySwingTimerDB.xOH = barOH:GetLeft() or 0
+            MySwingTimerDB.yOH = barOH:GetBottom() or 0
             barMH:Show()
-            if barOH then barOH:Show() end
-            if barBow then barBow:Show() end
-            print("[MySwingTimer Debug] Bars snapped and locked, barMH pos = x: " .. tostring(MySwingTimerDB.xMH) .. ", y: " .. tostring(MySwingTimerDB.yMH) .. ", barOH pos = x: " .. tostring(MySwingTimerDB.xOH or "N/A") .. ", y: " .. tostring(MySwingTimerDB.yOH or "N/A") .. ", barBow pos = x: " .. tostring(MySwingTimerDB.xBow or "N/A") .. ", y: " .. tostring(MySwingTimerDB.yBow or "N/A"))
-        elseif shouldUnlock then
+            barOH:Show()
+        elseif distanceMHAboveOH <= snapThreshold or distanceOHBelowMH <= snapThreshold then
+            -- Snap MH above OH or OH below MH
+            local left = self:GetLeft()
+            local ohTopY = barOH:GetTop()
+            self:ClearAllPoints()
+            self:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", left, ohTopY - self:GetHeight() - 2)
+            barOH:ClearAllPoints()
+            barOH:SetPoint("TOPLEFT", barMH, "BOTTOMLEFT", 0, -2)  -- Anchor OH to MH
+            MySwingTimerDB.lockBars = true
+            dragHandle:ClearAllPoints()
+            dragHandle:SetPoint("CENTER", barMH, "RIGHT", 10, 0)  -- Anchor to barMH's right side
+            dragHandle:Show()
+            MySwingTimerDB.pointMH = "BOTTOMLEFT"
+            MySwingTimerDB.relativePointMH = "BOTTOMLEFT"
+            MySwingTimerDB.xMH = self:GetLeft() or 0
+            MySwingTimerDB.yMH = self:GetBottom() or 0
+            MySwingTimerDB.pointOH = "BOTTOMLEFT"
+            MySwingTimerDB.relativePointOH = "BOTTOMLEFT"
+            MySwingTimerDB.xOH = barOH:GetLeft() or 0
+            MySwingTimerDB.yOH = barOH:GetBottom() or 0
+            barMH:Show()
+            barOH:Show()
+        elseif distanceMHBelowOH > unlockThreshold and distanceMHAboveOH > unlockThreshold and distanceOHBelowMH > unlockThreshold and distanceOHAboveMH > unlockThreshold then
             MySwingTimerDB.lockBars = false
-            print("[MySwingTimer Debug] Bars unlocked")
         end
     end
 end)
@@ -350,7 +292,6 @@ barOH:SetScript("OnDragStop", function(self)
     self:StopMovingOrSizing()
     local ohTop, ohBottom = self:GetTop() or 0, self:GetBottom() or 0
     local mhTop, mhBottom = barMH:GetTop() or 0, barMH:GetBottom() or 0
-    local bowTop, bowBottom = barBow and barBow:GetTop() or 0, barBow and barBow:GetBottom() or 0
     MySwingTimerDB.pointOH = "BOTTOMLEFT"
     MySwingTimerDB.relativePointOH = "BOTTOMLEFT"
     MySwingTimerDB.xOH = self:GetLeft() or 0
@@ -359,62 +300,30 @@ barOH:SetScript("OnDragStop", function(self)
     draggedBar = nil
     barMH.border:Hide()
     barOH.border:Hide()
-    if barBow then barBow.border:Hide() end
     if MySwingTimerDB.lockBars and dragHandle then
         dragHandle:Show()
     else
         if dragHandle then dragHandle:Hide() end
     end
-    if dualWield or (barBow and barBow:IsVisible()) then
+    if dualWield then
         local snapThreshold = 8  -- Snap threshold for locking
-        local unlockThreshold = 12  -- Reduced threshold for unlocking
-        local distances = {}
-        table.insert(distances, math.abs(ohBottom - mhTop))
-        table.insert(distances, math.abs(ohTop - mhBottom))
-        table.insert(distances, math.abs(mhBottom - ohTop))
-        table.insert(distances, math.abs(mhTop - ohBottom))
-        if barBow then
-            table.insert(distances, math.abs(ohBottom - bowTop))
-            table.insert(distances, math.abs(ohTop - bowBottom))
-            table.insert(distances, math.abs(bowBottom - ohTop))
-            table.insert(distances, math.abs(bowTop - ohBottom))
-            table.insert(distances, math.abs(mhBottom - bowTop))
-            table.insert(distances, math.abs(mhTop - bowBottom))
-            table.insert(distances, math.abs(bowBottom - mhTop))
-            table.insert(distances, math.abs(bowTop - mhBottom))
-        end
-        local shouldLock = false
-        for _, distance in ipairs(distances) do
-            if distance <= snapThreshold then
-                shouldLock = true
-                break
-            end
-        end
-        local shouldUnlock = true
-        for _, distance in ipairs(distances) do
-            if distance <= unlockThreshold then
-                shouldUnlock = false
-                break
-            end
-        end
-        if shouldLock then
-            -- Snap bars together
-            local left = barMH:GetLeft() or 0
-            local prevBottom = barMH:GetBottom() or 0
+        local unlockThreshold = 12  -- Larger threshold for unlocking
+        local distanceMHBelowOH = math.abs(ohBottom - mhTop)
+        local distanceMHAboveOH = math.abs(ohTop - mhBottom)
+        local distanceOHBelowMH = math.abs(mhBottom - ohTop)
+        local distanceOHAboveMH = math.abs(mhTop - ohBottom)
+        if distanceMHBelowOH <= snapThreshold or distanceOHAboveMH <= snapThreshold then
+            -- Snap MH below OH or OH above MH
+            local left = barMH:GetLeft()
+            local ohBottomY = self:GetBottom()
             barMH:ClearAllPoints()
-            barMH:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", left, prevBottom)
+            barMH:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", left, ohBottomY - 2)
             self:ClearAllPoints()
-            self:SetPoint("TOPLEFT", barMH, "BOTTOMLEFT", 0, -2)
-            if barBow then
-                barBow:ClearAllPoints()
-                barBow:SetPoint("TOPLEFT", self, "BOTTOMLEFT", 0, -2)
-            end
+            self:SetPoint("TOPLEFT", barMH, "BOTTOMLEFT", 0, -2)  -- Anchor OH to MH
             MySwingTimerDB.lockBars = true
-            if dragHandle then
-                dragHandle:ClearAllPoints()
-                dragHandle:SetPoint("CENTER", barMH, "RIGHT", 10, 0)
-                dragHandle:Show()
-            end
+            dragHandle:ClearAllPoints()
+            dragHandle:SetPoint("CENTER", barMH, "RIGHT", 10, 0)  -- Anchor to barMH's right side
+            dragHandle:Show()
             MySwingTimerDB.pointMH = "BOTTOMLEFT"
             MySwingTimerDB.relativePointMH = "BOTTOMLEFT"
             MySwingTimerDB.xMH = barMH:GetLeft() or 0
@@ -423,65 +332,51 @@ barOH:SetScript("OnDragStop", function(self)
             MySwingTimerDB.relativePointOH = "BOTTOMLEFT"
             MySwingTimerDB.xOH = self:GetLeft() or 0
             MySwingTimerDB.yOH = self:GetBottom() or 0
-            if barBow then
-                MySwingTimerDB.pointBow = "BOTTOMLEFT"
-                MySwingTimerDB.relativePointBow = "BOTTOMLEFT"
-                MySwingTimerDB.xBow = barBow:GetLeft() or 0
-                MySwingTimerDB.yBow = barBow:GetBottom() or 0
-            end
             barMH:Show()
             barOH:Show()
-            if barBow then barBow:Show() end
-            print("[MySwingTimer Debug] Bars snapped and locked, barMH pos = x: " .. tostring(MySwingTimerDB.xMH) .. ", y: " .. tostring(MySwingTimerDB.yMH) .. ", barOH pos = x: " .. tostring(MySwingTimerDB.xOH) .. ", y: " .. tostring(MySwingTimerDB.yOH) .. ", barBow pos = x: " .. tostring(MySwingTimerDB.xBow or "N/A") .. ", y: " .. tostring(MySwingTimerDB.yBow or "N/A"))
-        elseif shouldUnlock then
+        elseif distanceMHAboveOH <= snapThreshold or distanceOHBelowMH <= snapThreshold then
+            -- Snap MH above OH or OH below MH
+            local left = barMH:GetLeft()
+            local ohTopY = self:GetTop()
+            barMH:ClearAllPoints()
+            barMH:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", left, ohTopY - barMH:GetHeight() - 2)
+            self:ClearAllPoints()
+            self:SetPoint("TOPLEFT", barMH, "BOTTOMLEFT", 0, -2)  -- Anchor OH to MH
+            MySwingTimerDB.lockBars = true
+            dragHandle:ClearAllPoints()
+            dragHandle:SetPoint("CENTER", barMH, "RIGHT", 10, 0)  -- Anchor to barMH's right side
+            dragHandle:Show()
+            MySwingTimerDB.pointMH = "BOTTOMLEFT"
+            MySwingTimerDB.relativePointMH = "BOTTOMLEFT"
+            MySwingTimerDB.xMH = barMH:GetLeft() or 0
+            MySwingTimerDB.yMH = barMH:GetBottom() or 0
+            MySwingTimerDB.pointOH = "BOTTOMLEFT"
+            MySwingTimerDB.relativePointOH = "BOTTOMLEFT"
+            MySwingTimerDB.xOH = self:GetLeft() or 0
+            MySwingTimerDB.yOH = self:GetBottom() or 0
+            barMH:Show()
+            barOH:Show()
+        elseif distanceMHBelowOH > unlockThreshold and distanceMHAboveOH > unlockThreshold and distanceOHBelowMH > unlockThreshold and distanceOHAboveMH > unlockThreshold then
             MySwingTimerDB.lockBars = false
-            print("[MySwingTimer Debug] Bars unlocked")
         end
     end
 end)
 
--- Function to update weapon speeds and detect dual wield
-local function UpdateSwingDuration(preserveProgress)
+-- Function: Update swing durations on change (weapon speed, dual wield, haste)
+function UpdateSwingDuration(preserveProgress)
     local oldDurationMH = swingDurationMH
     local oldDurationOH = swingDurationOH
-    local mainSpeed, offSpeed = UnitAttackSpeed("player")
-    swingDurationMH = mainSpeed or 0
-    swingDurationOH = offSpeed or 0
-    if offSpeed and offSpeed > 0 then
-        -- Confirm offhand is a valid weapon (not shield or non-attacking item)
-        local link = GetInventoryItemLink("player", 17)
-        if link then
-            local _, _, _, _, _, _, subType = GetItemInfo(link)
-            ThrottleDebugPrint("UpdateSwingDuration: Offhand item type = " .. (subType or "none"))
-            if subType == "One-Handed Axes" or subType == "One-Handed Maces" or subType == "One-Handed Swords" or subType == "Daggers" or subType == "Fist Weapons" then
-                dualWield = true
-                if inCombat or MySwingTimerDB.showOutsideCombat then
-                    barOH:Show()
-                    barOH.label:Show()
-                end
-                if MySwingTimerDB.lockBars then
-                    dragHandle:ClearAllPoints()
-                    dragHandle:SetPoint("CENTER", barMH, "RIGHT", 10, 0)
-                    dragHandle:Show()
-                end
-                ThrottleDebugPrint("UpdateSwingDuration: dualWield = true, swingDurationOH = " .. swingDurationOH)
-            else
-                dualWield = false
-                swingDurationOH = 0
-                isSwingingOH = false
-                barOH:Hide()
-                barOH.label:Hide()
-                dragHandle:Hide()
-                ThrottleDebugPrint("UpdateSwingDuration: Invalid offhand, dualWield = false")
-            end
-        else
-            dualWield = false
-            swingDurationOH = 0
-            isSwingingOH = false
-            barOH:Hide()
-            barOH.label:Hide()
-            dragHandle:Hide()
-            ThrottleDebugPrint("UpdateSwingDuration: No offhand item, dualWield = false")
+    swingDurationMH, swingDurationOH = UnitAttackSpeed("player")
+    swingDurationMH = swingDurationMH or 0
+    swingDurationOH = swingDurationOH or 0
+    dualWield = swingDurationOH > 0
+    if dualWield then
+        barOH:Show()
+        barOH.label:Show()
+        if MySwingTimerDB.lockBars then
+            dragHandle:ClearAllPoints()
+            dragHandle:SetPoint("CENTER", barMH, "RIGHT", 10, 0)  -- Anchor to barMH's right side
+            dragHandle:Show()
         end
     else
         dualWield = false
@@ -490,7 +385,6 @@ local function UpdateSwingDuration(preserveProgress)
         barOH:Hide()
         barOH.label:Hide()
         dragHandle:Hide()
-        ThrottleDebugPrint("UpdateSwingDuration: No offhand speed, dualWield = false")
     end
     -- Scale OH swing timer if haste changes
     if preserveProgress and isSwingingOH and dualWield and oldDurationOH > 0 and swingDurationOH > 0 then
@@ -592,33 +486,22 @@ function MySwingTimer:PLAYER_LOGIN()
         if UnitAffectingCombat("player") then
             inCombat = true
         end
-        local _, _, _, xMH, yMH = barMH:GetPoint()
-        local _, _, _, xOH, yOH = barOH:GetPoint()
-        print("[MySwingTimer Debug] PLAYER_LOGIN: dualWield = " .. tostring(dualWield) .. ", barMH visible = " .. tostring(barMH:IsVisible()) .. ", barMH pos = x: " .. tostring(xMH) .. ", y: " .. tostring(yMH) .. ", barOH visible = " .. tostring(barOH:IsVisible()) .. ", barOH pos = x: " .. tostring(xOH) .. ", y: " .. tostring(yOH) .. ", lockBars = " .. tostring(MySwingTimerDB.lockBars))
+        DEFAULT_CHAT_FRAME:AddMessage("/myswingtimer for options")
     end)
 end
 
 -- Event: PLAYER_LOGOUT (save positions before logout)
 function MySwingTimer:PLAYER_LOGOUT()
-    if barMH then
+    if barMH and barOH then
         MySwingTimerDB.pointMH = "BOTTOMLEFT"
         MySwingTimerDB.relativePointMH = "BOTTOMLEFT"
         MySwingTimerDB.xMH = barMH:GetLeft() or 0
         MySwingTimerDB.yMH = barMH:GetBottom() or 0
-    end
-    if barOH then
         MySwingTimerDB.pointOH = "BOTTOMLEFT"
         MySwingTimerDB.relativePointOH = "BOTTOMLEFT"
         MySwingTimerDB.xOH = barOH:GetLeft() or 0
         MySwingTimerDB.yOH = barOH:GetBottom() or 0
     end
-    if barBow then
-        MySwingTimerDB.pointBow = "BOTTOMLEFT"
-        MySwingTimerDB.relativePointBow = "BOTTOMLEFT"
-        MySwingTimerDB.xBow = barBow:GetLeft() or 0
-        MySwingTimerDB.yBow = barBow:GetBottom() or 0
-    end
-    print("[MySwingTimer Debug] PLAYER_LOGOUT: Saved barMH pos = x: " .. tostring(MySwingTimerDB.xMH) .. ", y: " .. tostring(MySwingTimerDB.yMH) .. ", barOH pos = x: " .. tostring(MySwingTimerDB.xOH or "N/A") .. ", y: " .. tostring(MySwingTimerDB.yOH or "N/A") .. ", barBow pos = x: " .. tostring(MySwingTimerDB.xBow or "N/A") .. ", y: " .. tostring(MySwingTimerDB.yBow or "N/A"))
 end
 
 -- Event: PLAYER_REGEN_DISABLED (enter combat)
@@ -635,7 +518,6 @@ function MySwingTimer:PLAYER_REGEN_DISABLED()
             dragHandle:Show()
         end
     end
-    ThrottleDebugPrint("PLAYER_REGEN_DISABLED: dualWield = " .. tostring(dualWield) .. ", barOH visible = " .. tostring(barOH:IsVisible()) .. ", lockBars = " .. tostring(MySwingTimerDB.lockBars))
 end
 
 -- Event: PLAYER_REGEN_ENABLED (leave combat)
@@ -656,7 +538,6 @@ function MySwingTimer:PLAYER_REGEN_ENABLED()
         dragHandle:SetPoint("CENTER", barMH, "RIGHT", 10, 0)  -- Anchor to barMH's right side
         dragHandle:Show()
     end
-    ThrottleDebugPrint("PLAYER_REGEN_ENABLED: dualWield = " .. tostring(dualWield) .. ", barOH visible = " .. tostring(barOH:IsVisible()) .. ", lockBars = " .. tostring(MySwingTimerDB.lockBars))
 end
 
 -- Event: UNIT_AURA (check for haste buff changes)
@@ -688,6 +569,20 @@ end
 function MySwingTimer:UNIT_ATTACK_SPEED(unit)
     if unit == "player" then
         UpdateSwingDuration(true)  -- Preserve swing progress
+    end
+end
+
+-- Event: UNIT_SPELLCAST_SUCCEEDED (reset for on-next-swing abilities - MH)
+function MySwingTimer:UNIT_SPELLCAST_SUCCEEDED(unit, castGUID, spellId)
+    if unit == "player" then
+        if onNextSwingSpells[spellId] then  -- On-next-swing abilities (Heroic Strike, Raptor Strike, etc.) - reset MH
+            if swingDurationMH > 0 then
+                swingStartMH = GetTime()
+                isSwingingMH = true
+                barMH:Show()
+                barMH.label:Show()
+            end
+        end
     end
 end
 
@@ -805,45 +700,6 @@ MySwingTimer:SetScript("OnUpdate", function(self, elapsed)
             end
         end
     end
-
-    -- Maintain barOH and barBow position relative to barMH during drag
-    if isDragging and MySwingTimerDB.lockBars and draggedBar == barMH and barMH then
-        if barOH then
-            barOH:ClearAllPoints()
-            barOH:SetPoint("TOPLEFT", barMH, "BOTTOMLEFT", 0, -2)
-            barOH:Show()
-            barOH.label:Show()
-        end
-        if barBow then
-            barBow:ClearAllPoints()
-            barBow:SetPoint("TOPLEFT", barOH or barMH, "BOTTOMLEFT", 0, -2)
-            barBow:Show()
-            barBow.label:Show()
-        end
-        print("[MySwingTimer Debug] Dragging locked bars, barOH visible = " .. tostring(barOH and barOH:IsVisible()) .. ", barBow visible = " .. tostring(barBow and barBow:IsVisible()))
-    end
-
-    -- Keep dragHandle anchored to barMH when locked
-    if MySwingTimerDB.lockBars and barMH and (dualWield or (barBow and barBow:IsVisible())) and dragHandle then
-        dragHandle:ClearAllPoints()
-        dragHandle:SetPoint("CENTER", barMH, "RIGHT", 10, 0)
-        dragHandle:Show()
-    end
-
-    -- Check for locking condition during drag
-    if isDragging and (dualWield or (barBow and barBow:IsVisible())) and draggedBar then
-        local targetBar = (draggedBar == barMH) and (barOH or barBow) or barMH
-        local draggedTop, draggedBottom = draggedBar:GetTop() or 0, draggedBar:GetBottom() or 0
-        local targetTop, targetBottom = targetBar and targetBar:GetTop() or 0, targetBar and targetBar:GetBottom() or 0
-        local snapThreshold = 8
-        if targetBar and (math.abs(draggedBottom - targetTop) <= snapThreshold or math.abs(draggedTop - targetBottom) <= snapThreshold) then
-            targetBar.border:Show()
-        else
-            if barOH then barOH.border:Hide() end
-            if barBow then barBow.border:Hide() end
-            barMH.border:Hide()
-        end
-    end
 end)
 
 -- Register events
@@ -854,4 +710,5 @@ MySwingTimer:RegisterEvent("PLAYER_REGEN_ENABLED")
 MySwingTimer:RegisterEvent("UNIT_AURA")
 MySwingTimer:RegisterEvent("UNIT_INVENTORY_CHANGED")
 MySwingTimer:RegisterEvent("UNIT_ATTACK_SPEED")
+MySwingTimer:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
 MySwingTimer:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
