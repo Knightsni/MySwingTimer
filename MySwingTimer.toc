@@ -2,6 +2,7 @@
 ## Title: My Swing Timer
 ## Notes: Tracks weapon swing timers for WoW Classic
 ## Author: Netha
+## Version: 1.0
 ## SavedVariables: MySwingTimerDB
 MySwingTimer.lua
 MySwingTimerRanged.lua

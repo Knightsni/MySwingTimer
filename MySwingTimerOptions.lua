@@ -15,11 +15,10 @@ SlashCmdList["MYSWINGTIMER"] = function(msg)
                 if dualWield and barOH then
                     barOH:Show()
                     barOH.label:Show()
-                    if MySwingTimerDB.lockBars and dragHandle then
-                        dragHandle:ClearAllPoints()
-                        dragHandle:SetPoint("CENTER", barMH, "RIGHT", 10, 0)  -- Anchor to barMH's right side
-                        dragHandle:Show()
-                    end
+                end
+                if barRanged then
+                    barRanged:Show()
+                    barRanged.label:Show()
                 end
             else
                 barMH:Hide()
@@ -28,7 +27,10 @@ SlashCmdList["MYSWINGTIMER"] = function(msg)
                     barOH:Hide()
                     barOH.label:Hide()
                 end
-                if dragHandle then dragHandle:Hide() end
+                if barRanged then
+                    barRanged:Hide()
+                    barRanged.label:Hide()
+                end
             end
         end
         DEFAULT_CHAT_FRAME:AddMessage(MySwingTimerDB.showOutsideCombat and "Swing bar always shown" or "Swing bar hidden outside combat")
@@ -53,13 +55,13 @@ SlashCmdList["MYSWINGTIMER"] = function(msg)
             MySwingTimerDB.xOH = barOH:GetLeft() or 0
             MySwingTimerDB.yOH = barOH:GetBottom() or 0
         end
-        if dragHandle then
-            dragHandle:ClearAllPoints()
-            if barMH then
-                dragHandle:SetPoint("CENTER", barMH, "RIGHT", 10, 0)  -- Anchor to barMH's right side
-            else
-                dragHandle:SetPoint("CENTER", 0, -15)  -- Fallback position
-            end
+        if barRanged then
+            barRanged:ClearAllPoints()
+            barRanged:SetPoint("CENTER", 0, -44)  -- Middle of screen, below offhand
+            MySwingTimerDB.pointRanged = "BOTTOMLEFT"
+            MySwingTimerDB.relativePointRanged = "BOTTOMLEFT"
+            MySwingTimerDB.xRanged = barRanged:GetLeft() or 0
+            MySwingTimerDB.yRanged = barRanged:GetBottom() or 0
         end
         if not inCombat then
             if MySwingTimerDB.showOutsideCombat then
@@ -70,9 +72,10 @@ SlashCmdList["MYSWINGTIMER"] = function(msg)
                 if dualWield and barOH then
                     barOH:Show()
                     barOH.label:Show()
-                    if MySwingTimerDB.lockBars and dragHandle then
-                        dragHandle:Show()
-                    end
+                end
+                if barRanged then
+                    barRanged:Show()
+                    barRanged.label:Show()
                 end
             else
                 if barMH then
@@ -83,7 +86,10 @@ SlashCmdList["MYSWINGTIMER"] = function(msg)
                     barOH:Hide()
                     barOH.label:Hide()
                 end
-                if dragHandle then dragHandle:Hide() end
+                if barRanged then
+                    barRanged:Hide()
+                    barRanged.label:Hide()
+                end
             end
         end
         local xOH, yOH = (barOH and barOH:GetLeft() or 0), (barOH and barOH:GetBottom() or 0)
